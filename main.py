@@ -2,79 +2,73 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+
 import pandas as pd
 
-# Configurar o navegador
-driver = webdriver.Chrome()
+def setup_webdriver():
+    driver = webdriver.Chrome()
+    driver.get('https://in.gov.br/leiturajornal?secao=do2')
+    return driver
 
-# Abrir o site do Diário Oficial da União
-driver.get('https://www.in.gov.br/leiturajornal?secao=do2')
-
-# Aguarde até que o elemento com ID "viewMenuOptionTree" seja clicável
-wait = WebDriverWait(driver, 10)
-alteravisualizacao = wait.until(
-    EC.element_to_be_clickable((By.ID, 'viewMenuOptionTree'))
-)
-
-# Clique no elemento para alterar a visualização
-alteravisualizacao.click()
-
-# Função para extrair links e texto de elementos
 def extract_links_and_text(parent_element, class_name):
     elements = parent_element.find_elements(By.CLASS_NAME, class_name)
-    result = []
-    for element in elements:
-        a_element = element.find_element(By.TAG_NAME, 'a')
-        href = a_element.get_attribute('href')
-        text = a_element.text
-        result.append({"Text": text, "Link": href})
-    return result
+    return [{"Text": el.find_element(By.TAG_NAME, 'a').text, "Link": el.find_element(By.TAG_NAME, 'a').get_attribute('href')} for el in elements]
 
-# Encontre os elementos para Casa Civil e Previdência Social
-span_casa_civil = driver.find_element(By.XPATH, "//span[text()='Casa Civil']")
-ul_casa_civil = span_casa_civil.find_element(By.XPATH, "./following-sibling::ul")
-span_previdencia_social = driver.find_element(By.XPATH, "//span[text()='Ministério da Previdência Social']")
-ul_previdencia_social = span_previdencia_social.find_element(By.XPATH, "./following-sibling::ul")
+def refresh_page(driver):
+    # Aguarde até que o botão de recarregamento esteja clicável ou até atingir o tempo limite de 6 segundos
+    wait = WebDriverWait(driver, 6)
+    try:
+        wait.until(EC.element_to_be_clickable((By.id, 'reloadButton'))).click()  # Substitua 'reloadButton' pelo ID correto do botão de recarregamento
+    except Exception as e:
+        print(f"Erro ao recarregar a página: {str(e)}")
 
-# Extraia os links e texto dos elementos
-links_and_text_casa_civil = extract_links_and_text(ul_casa_civil, "file")
-links_and_text_previdencia = extract_links_and_text(ul_previdencia_social, "file")
+def extract_details_and_portarias(driver, links_and_text, detalhes_list, portarias_list):
+    for item in links_and_text:
+        try:
+            driver.get(item['Link'])
 
-# Listas para armazenar detalhes e portarias
-detalhes_casa_civil = []
-portarias_casa_civil = []
-detalhes_previdencia = []
-portarias_previdencia = []
+            try:
+                # Espera até que o elemento de detalhes seja visível
+                detalhes_element = WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, 'detalhes-dou')))
+                detalhes = detalhes_element.text
 
-# Itere sobre os links e extraia detalhes e portarias
-for item in links_and_text_casa_civil:
-    link = item['Link']
-    driver.get(link)
-    detalhes_cc = driver.find_element(By.XPATH, "//div[@class='detalhes-dou']").text
-    portaria_cc = driver.find_element(By.XPATH, "//div[@class='texto-dou']").text
-    detalhes_casa_civil.append(detalhes_cc)
-    portarias_casa_civil.append(portaria_cc)
+                # Espera até que o elemento de portaria seja visível
+                portaria_element = WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, 'texto-dou')))
+                portaria = portaria_element.text
 
-for item in links_and_text_previdencia:
-    link = item['Link']
-    driver.get(link)
-    detalhes_cc = driver.find_element(By.XPATH, "//div[@class='detalhes-dou']").text
-    portaria_cc = driver.find_element(By.XPATH, "//div[@class='texto-dou']").text
-    detalhes_previdencia.append(detalhes_cc)
-    portarias_previdencia.append(portaria_cc)
+                detalhes_list.append(detalhes)
+                portarias_list.append(portaria)
+            except TimeoutException:
+                print(f"Tempo de espera excedido. Recarregando a página...")
+                driver.refresh()
+        except Exception as e:
+            print(f"Erro ao extrair detalhes e portarias: {str(e)}")
 
-# Feche o navegador
-driver.quit()
+with setup_webdriver() as driver:
+    wait = WebDriverWait(driver, 10)
+    alteravisualizacao = wait.until(EC.element_to_be_clickable((By.ID, 'viewMenuOptionTree')))
+    alteravisualizacao.click()
 
-# Crie DataFrames com as informações
-df_casa_civil = pd.DataFrame({"Link": [item['Link'] for item in links_and_text_casa_civil],
-                              "Detalhes": detalhes_casa_civil,
-                              "Portaria": portarias_casa_civil})
-df_previdencia = pd.DataFrame({"Link": [item['Link'] for item in links_and_text_previdencia],
-                              "Detalhes": detalhes_previdencia,
-                              "Portaria": portarias_previdencia})
+    casa_civil, previdencia_social = driver.find_element(By.XPATH, "//span[text()='Casa Civil']"), driver.find_element(By.XPATH, "//span[text()='Ministério da Previdência Social']")
+    ul_casa_civil, ul_previdencia_social = casa_civil.find_element(By.XPATH, "./following-sibling::ul"), previdencia_social.find_element(By.XPATH, "./following-sibling::ul")
 
-# Salve os DataFrames em um arquivo Excel
-with pd.ExcelWriter('C:\\Users\\Gabriel\\Desktop\\base.xlsx', engine='xlsxwriter') as writer:
-    df_casa_civil.to_excel(writer, sheet_name='Casa Civil', index=False)
-    df_previdencia.to_excel(writer, sheet_name='Previdência Social', index=False)
+    links_and_text_casa_civil, links_and_text_previdencia = extract_links_and_text(ul_casa_civil, "file"), extract_links_and_text(ul_previdencia_social, "file")
+
+    detalhes_casa_civil, portarias_casa_civil, detalhes_previdencia, portarias_previdencia = [], [], [], []
+    extract_details_and_portarias(driver, links_and_text_casa_civil, detalhes_casa_civil, portarias_casa_civil)
+    extract_details_and_portarias(driver, links_and_text_previdencia, detalhes_previdencia, portarias_previdencia)
+
+df_casa_civil = pd.DataFrame({"Text": [item['Text'] for item in links_and_text_casa_civil], "Link": [item['Link'] for item in links_and_text_casa_civil], "Detalhes": detalhes_casa_civil, "Portaria": portarias_casa_civil})
+df_previdencia = pd.DataFrame({"Text": [item['Text'] for item in links_and_text_previdencia], "Link": [item['Link'] for item in links_and_text_previdencia], "Detalhes": detalhes_previdencia, "Portaria": portarias_previdencia})
+
+df_banco_de_dados_final = pd.concat([df_casa_civil, df_previdencia], ignore_index=True)
+
+excel_file_path = 'C:\\Users\\Gabriel\\Desktop\\base.xlsx'
+try:
+    with pd.ExcelFile(excel_file_path) as xls:
+        df_banco_de_dados_existing = pd.read_excel(xls, 'BANCO DE DADOS')
+except FileNotFoundError:
+    df_banco_de_dados_existing = pd.DataFrame()
+
+df_banco_de_dados_final.to_excel(excel_file_path, sheet_name='BANCO DE DADOS', index=False)
