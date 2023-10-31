@@ -8,19 +8,13 @@ import pandas as pd
 
 def setup_webdriver():
     driver = webdriver.Chrome()
-    driver.get('https://in.gov.br/leiturajornal?secao=do2')
+    driver.get('https://www.in.gov.br/leiturajornal?secao=do2')
+    time.sleep(10)
     return driver
 
 def extract_links_and_text(parent_element, class_name):
     elements = parent_element.find_elements(By.CLASS_NAME, class_name)
     return [{"Text": el.find_element(By.TAG_NAME, 'a').text, "Link": el.find_element(By.TAG_NAME, 'a').get_attribute('href')} for el in elements]
-
-def refresh_page(driver):
-    wait = WebDriverWait(driver, 6)
-    try:
-        wait.until(EC.element_to_be_clickable((By.id, 'reloadButton'))).click()
-    except Exception as e:
-        print(f"Erro ao recarregar a página: {str(e)}")
 
 def extract_details_and_portarias(driver, links_and_text, detalhes_list, portarias_list):
     for item in links_and_text:
@@ -41,7 +35,7 @@ def extract_details_and_portarias(driver, links_and_text, detalhes_list, portari
 
 def classificar_texto(Portaria):
     categorias = {
-        "DIAT": "Divisão de Atendimento do Regime Próprio de Previdência da União",
+        "DIAT-RPPU": "Divisão de Atendimento do Regime Próprio de Previdência da União",
         "SRNCO": "Superintendência Regional Norte/Centro-Oeste",
         "SRNE": "Superintendência Regional Nordeste",
         "SRSE-I": "Superintendência Regional Sudeste I",
@@ -53,6 +47,7 @@ def classificar_texto(Portaria):
         if categoria.lower() in Portaria.lower() or descricao.lower() in Portaria.lower():
             return categoria
     return None
+
 
 driver = setup_webdriver()
 wait = WebDriverWait(driver, 10)
@@ -85,15 +80,12 @@ except FileNotFoundError:
 
 df_banco_de_dados_final.to_excel(excel_file_path, sheet_name='Sheet1', index=False)
 
-# Carregue sua planilha original
 planilha = pd.read_excel('C:\\Users\\Gabriel\\Desktop\\base.xlsx')
 
-# Defina a lista de nomes a serem procurados na coluna E
-nomes = ["DIAT", "SRNCO", "SRNE", "SRSE-I", "SRSE-II", "SRSE-III", "SRSUL"]
+nomes = ["DIAT-RPPU", "SRNCO", "SRNE", "SRSE-I", "SRSE-II", "SRSE-III", "SRSUL"]
 
-# Itere sobre a lista de nomes e crie uma nova planilha para cada um
 for nome in nomes:
     subplanilha = planilha[planilha["Categoria"] == nome]
     if not subplanilha.empty:
-        nome_arquivo = f"{nome}.xlsx"  # Nome do arquivo para a nova planilha
+        nome_arquivo = f"{nome}.xlsx"
         subplanilha.to_excel(nome_arquivo, index=False)
